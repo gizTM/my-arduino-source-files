@@ -1,0 +1,1 @@
+sudo esptool.py --port /dev/ttyUSB0 write_flash 0x00000 "boot_v1.4(b1).bin" 0x01000 user1.1024.new.2.bin
