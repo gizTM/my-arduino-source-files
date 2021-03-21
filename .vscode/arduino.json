@@ -1,0 +1,5 @@
+{
+    "board": "arduino:samd:mkrwifi1010",
+    "port": "COM6",
+    "sketch": "app_files\\ph_calibration_v1_ext_eeprom\\ph_calibration_v1_ext_eeprom.ino"
+}

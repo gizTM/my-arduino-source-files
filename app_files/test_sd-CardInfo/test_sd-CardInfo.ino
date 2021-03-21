@@ -37,9 +37,9 @@ const int chipSelect = 4;
 
 void setup() {
   // Open serial communications and wait for port to open:
-  pinMode(chipSelect, OUTPUT);
-  digitalWrite(chipSelect, HIGH);
-  delay(1);
+//  pinMode(chipSelect, OUTPUT);
+//  digitalWrite(chipSelect, HIGH);
+//  delay(1);
   Serial.begin(9600);
 //  while (!Serial) {
 //    ; // wait for serial port to connect. Needed for native USB port only
@@ -116,4 +116,5 @@ void setup() {
 }
 
 void loop(void) {
+//  Serial.print(".");
 }

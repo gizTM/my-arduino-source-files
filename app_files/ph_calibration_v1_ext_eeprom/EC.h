@@ -1,8 +1,14 @@
 #ifndef ec_h
 #define ec_h
 
+#include <Arduino.h>
 #include "GraphVar.h"
 #include "SensorGraph.h"
+
+#define CmdReceivedBufferLength 20
+#define KVALUEADDR 0x0A    //the start address of the K value stored in the EEPROM
+#define RES2 820.0
+#define ECREF 200.0
 
 #define graphECTitle "EC"
 #define minEC 0
@@ -36,6 +42,15 @@
 
 class EC {
   private:
+    double _ecvalue;
+    double _kvalue;
+    double _kvalueLow;
+    double _kvalueHigh;
+    byte _cmdReceivedBufferIndex;
+    double _voltage;
+    double _temperature;
+    double _rawEC;
+    char _cmdReceivedBuffer[CmdReceivedBufferLength+1]; // store the serialcommand
     SensorGraph graph;
     String title;
     double minRange; double maxRange;
@@ -64,6 +79,14 @@ class EC {
     void draw(TFT_22_ILI9225 &d, double &x, double val, double minVal, double maxVal);
     void drawLabel(TFT_22_ILI9225 &d, double &x, double val, double minVal, double maxVal);
     void drawGraph(TFT_22_ILI9225 &d, double &x, double val, double minVal, double maxVal);
+    void begin();
+    float readValue(float voltage, float temperature);
+    void calibration(float voltage, float temperature, char* cmd);
+    void calibration(float voltage, float temperature);
+    boolean cmdSerialDataAvailable();
+    byte cmdParse(const char* cmd);
+    byte cmdParse();
+    void ecCalibration(byte mode);
 };
 
 #endif

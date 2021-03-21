@@ -1,5 +1,10 @@
 #include <math.h>
+#include <Wire.h>
 #include "Util.h"
+
+#define debug 0
+
+#define EEPROM_ADDR 0x50
 
 void reverse(char* str, int len) {
   int i = 0, j = len - 1, temp;
@@ -44,4 +49,80 @@ void ftoa(float n, char* res, int afterpoint) {
     fpart = fpart * pow(10, afterpoint); 
     intToStr((int)fpart, res + i + 1, afterpoint); 
   } 
+}
+
+void EEPROM_wr(unsigned int addr, byte data) {
+  int rdata = (data);
+  Wire.beginTransmission(EEPROM_ADDR);
+  Wire.write((int)(addr>>8));     // MSB
+  Wire.write((int)(addr & 0xFF)); // LSB
+  Wire.write(rdata);
+  Wire.endTransmission();
+  if (debug) {
+    Serial.print("EEPROM write: addr: ");
+    Serial.print(addr);
+    Serial.print(" ");
+    Serial.println(data);
+  }
+  delay(5);
+}
+byte EEPROM_rd(unsigned int addr) {
+  byte data = 0xFF;
+  Wire.beginTransmission(EEPROM_ADDR);
+  Wire.write((int)(addr>>8));     // MSB
+  Wire.write((int)(addr & 0xFF)); // LSB
+  Wire.endTransmission();
+  Wire.requestFrom(EEPROM_ADDR, 1);
+  while (!Wire.available()) {Serial.print(".");}
+  if (Wire.available()) {
+    data = Wire.read();
+    if (debug) {
+      Serial.print("Wire.read()");
+      Serial.println(data);
+    }
+  }
+  if (debug) {
+    Serial.print("EEPROM read: addr: ");
+    Serial.print(addr);
+    Serial.print(" ");
+    Serial.println(data);
+  }
+  delay(5);
+  return data;
+}
+void EEPROM_write(int address, float value) {
+  byte byteVal[sizeof(float)];
+  memcpy(byteVal, &value, sizeof(float));
+  for (int i = 0; i < sizeof(float); i++) {
+    EEPROM_wr(address + i, byteVal[i]);
+  }
+}
+float EEPROM_read(int address) {
+  byte byteVal[sizeof(float)];
+  for (int i = 0; i < sizeof(float); i++) {
+    byteVal[i] = EEPROM_rd(address + i);
+  }
+  float f;
+  memcpy(&f, byteVal, sizeof(float));
+  return f;
+}
+
+int getMedianNum(int bArray[], int iFilterLen) {
+ int bTab[iFilterLen];
+ for (int idx = 0; idx<iFilterLen; idx++) {
+  bTab[idx] = bArray[idx];
+ }
+ int i, j, bTemp;
+ for (j = 0; j < iFilterLen - 1; j++) {
+  for (i = 0; i < iFilterLen - j - 1; i++) {
+    if (bTab[i] > bTab[i + 1]) {
+      bTemp = bTab[i];
+      bTab[i] = bTab[i + 1];
+      bTab[i + 1] = bTemp;
+    }
+  }
+ }
+ if ((iFilterLen & 1) > 0) bTemp = bTab[(iFilterLen - 1) / 2];
+ else bTemp = (bTab[iFilterLen / 2] + bTab[iFilterLen / 2 - 1]) /2;
+ return bTemp;
 }

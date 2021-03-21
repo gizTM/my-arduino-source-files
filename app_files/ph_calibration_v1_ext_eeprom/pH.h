@@ -1,8 +1,13 @@
 #ifndef ph_h
 #define ph_h
 
+#include <Arduino.h>
 #include "GraphVar.h"
 #include "SensorGraph.h"
+
+#define CmdReceivedBufferLength 20
+#define SlopeValueAddress 0 // (slope of the ph probe)store atthe beginning of the EEPROM. The slope is a float number,occupies4 bytes.
+#define InterceptValueAddress (SlopeValueAddress+4)
 
 #define graphpHTitle "pH"
 #define minpH 0
@@ -36,6 +41,19 @@
 
 class pH {
   private:
+    double _phvalue;
+    double _slopeValue;
+    double _interceptValue;
+    double _kvalue;
+    double _kvalueLow;
+    double _kvalueHigh;
+    byte _cmdReceivedBufferIndex;
+    double _voltage;
+    double _temperature;
+    double _rawPH;
+    char _cmdReceivedBuffer[CmdReceivedBufferLength+1]; // store the serialcommand
+    double averageVoltage;
+    boolean enterCalibrationFlag;
     SensorGraph graph;
     String title;
     double minRange; double maxRange;
@@ -64,6 +82,14 @@ class pH {
     void draw(TFT_22_ILI9225 &d, double &x, double val, double minVal, double maxVal);
     void drawLabel(TFT_22_ILI9225 &d, double &x, double val, double minVal, double maxVal);
     void drawGraph(TFT_22_ILI9225 &d, double &x, double val, double minVal, double maxVal);
+    void begin();
+    float readValue(float voltage, float temperature);
+    void calibration(float voltage, float temperature, char* cmd);
+    void calibration(float voltage, float temperature);
+    boolean cmdSerialDataAvailable();
+    byte cmdParse(const char* cmd);
+    byte cmdParse();
+    void phCalibration(byte mode);
 };
 
 #endif
