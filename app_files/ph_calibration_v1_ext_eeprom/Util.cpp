@@ -73,7 +73,7 @@ byte EEPROM_rd(unsigned int addr) {
   Wire.write((int)(addr & 0xFF)); // LSB
   Wire.endTransmission();
   Wire.requestFrom(EEPROM_ADDR, 1);
-  while (!Wire.available()) {Serial.print(".");}
+  while (!Wire.available()) {Serial.println("wire not available");}
   if (Wire.available()) {
     data = Wire.read();
     if (debug) {

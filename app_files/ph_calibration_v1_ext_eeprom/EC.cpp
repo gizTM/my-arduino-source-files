@@ -110,16 +110,16 @@ float EC::readValue(float voltage, float temperature) {
   value = _rawEC * _kvalue;             //calculate the EC value after automatic shift
   value = value / (1.0+0.0185*(temperature-25.0));  //temperature compensation
   _ecvalue = value;                           //store the EC value for Serial CMD calibration
-  Serial.print("readValue: voltage: ");
-  Serial.print(voltage);
-  Serial.print(", _rawEC: ");
-  Serial.print(_rawEC);
-  Serial.print(", valueTemp: ");
-  Serial.print(valueTemp);
-  Serial.print(", _kvalue: ");
-  Serial.print(_kvalue);
-  Serial.print(", value: ");
-  Serial.println(value);
+  // Serial.print("readValue: voltage: ");
+  // Serial.print(voltage);
+  // Serial.print(", _rawEC: ");
+  // Serial.print(_rawEC);
+  // Serial.print(", valueTemp: ");
+  // Serial.print(valueTemp);
+  // Serial.print(", _kvalue: ");
+  // Serial.print(_kvalue);
+  // Serial.print(", value: ");
+  // Serial.println(value);
   return value;
 }
 void EC::calibration(float voltage, float temperature,char* cmd) {   

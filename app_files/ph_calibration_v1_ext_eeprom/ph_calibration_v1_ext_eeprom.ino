@@ -18,14 +18,23 @@ m/wiki/index.php/PH_meter%28SKU:_SEN0161%29
  2.This code is tested on Arduino Uno.
  ****************************************************/
 
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+// #include <DateTime.h>
+// #include <DateTimeStrings.h>
 #include <Wire.h>
 #include <TFT_22_ILI9225.h>
+#include <FastLED.h>
 #include <WiFiNINA.h>
 #include <math.h> 
 #include <stdio.h> 
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
+// #include <CooperativeMultitasking.h>
+// #include <MQTTClient.h>
+#include <MQTT.h>
 
 #include "./fonts/FreeMono9pt7b.h"
 #include "pH.h"
@@ -36,24 +45,57 @@ m/wiki/index.php/PH_meter%28SKU:_SEN0161%29
 
 const char* ssid = "Somboon";
 const char* password = "s4114258m";
-//const char* mqtt_server = "192.168.1.35";
-const char* mqtt_server = "broker.hivemq.com";
+const char* mqtt_server = "192.168.1.47";
+// const char* mqtt_server = "broker.hivemq.com";
+const int mqtt_port = 1883;
+const char* mqtt_client_id = "mqttdevice";
+const char* mqtt_username = "fanggiz";
+const char* mqtt_password = "1mqtt;";
+
+// const char* clientid] = " ";
+// const char* topicname] = "/giz/#";
+
+WiFiClient wifiClient;
+// PubSubClient client(wifiClient);
+MQTTClient client;
+
+// CooperativeMultitasking tasks;
+// MQTTClient mqttclient(&tasks, &wificlient, mqtt_server, mqtt_port, clientid, NULL, NULL);
+// MQTTTopic topic(&mqttclient, topicname);
+
+
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+// NTPClient timeClient(ntpUDP, "pool.ntp.org", 60*60*24*7, 60000);
 
 #define LIGHT 8
+#define PRE_SETUP_PIN 1
+#define LED 2
+#define NUM_LEDS 27
+#define BRIGHTNESS 64
+#define LED_TYPE WS2811
+#define COLOR_ORDER GRB
+CRGB leds[NUM_LEDS];
 #define ONE_WIRE_BUS 5
 #define WATER_LEVEL 4
 
-WiFiClient espClient;
-PubSubClient client(espClient);
+// r=32.34%
+// g=14.01%
+// b=52.66%
+// |
+// V
+CRGB LED_COLOR = CRGB(83, 36, 134);
+boolean LED_STATUS = false;
+boolean LED_TRIGGER = true;
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
-WiFiServer server(80);            //server socket
-WiFiClient wifiClient = server.available();
-
 float celcius = 0;
 float fahrenheit = 0;
+
+#define debug_publish false
 
 #define TFT_RST 6//A4
 #define TFT_RS  7//A3
@@ -101,32 +143,64 @@ Temperature tempObj;
 TFT_22_ILI9225 tft = TFT_22_ILI9225(TFT_RST, TFT_RS, TFT_CS, TFT_SDI, TFT_CLK, TFT_LED);
 
 void setup() {
- Serial.begin(115200);
- tft.begin();
- tft.setOrientation(1);
- setup_wifi();
- client.setServer(mqtt_server, 1883);
- client.setCallback(onMessage);
- Wire.begin();
-//  delay(1);
- randomSeed(analogRead(0));
- pHObj.begin(); //read the slope and intercept of the ph probe
- ECObj.begin();
+  pinMode(PRE_SETUP_PIN, OUTPUT);
+  digitalWrite(PRE_SETUP_PIN, HIGH);
+  delay(3000); // power-up safety delay
+  FastLED.addLeds<LED_TYPE, LED, COLOR_ORDER>(leds, NUM_LEDS);//.setCorrection(TypicalLEDStrip);
+  // FastLED.setBrightness(BRIGHTNESS);
+  turnOffLight();
+  Serial.begin(115200);
+  tft.begin();
+  tft.setOrientation(1);
+  setup_wifi();
+  timeClient.begin();
+  setup_mqtt();
+  Wire.begin();
+  digitalWrite(PRE_SETUP_PIN, LOW);
+  //  delay(1);
+  randomSeed(analogRead(0));
+  pHObj.begin(); //read the slope and intercept of the ph probe
+  ECObj.begin();
 }
 
+int ii = 0;
+
 void loop() {
+  timeClient.update();
+  // Serial.print("Current time: ");
+  // Serial.print(timeClient.getFormattedTime());
+  // Serial.print(" > ");
+  // timeClient.setTimeOffset(7*24*60*60);
+  // Serial.print(timeClient.getDay());
+  // Serial.print(" ");
+  // Serial.println(timeClient.getFormattedTime());
+  // timeClient.setTimeOffset(0);
   char msg[10];
   char msgtext[25];
   String themsg;
-  if (!client.connected()) {
-    reconnect();
-  } else {
-    client.loop();
-  }
+  check_mqtt();
   handlepH();
   handleEC();
   handleDO();
   handleTemperature();
+  // if (LED_TRIGGER == true) {
+  //   LED_TRIGGER = false;
+    if (LED_STATUS == true) turnOnLight();
+    else turnOffLight();
+  // }
+  ii++;
+  delay(1000);
+}
+
+void turnOnLight() {
+  Serial.println("light on!");
+  for (int i = 0; i<NUM_LEDS; i+=1) { leds[i] = LED_COLOR; }
+  FastLED.show();
+}
+void turnOffLight() {
+  Serial.println("light off!");
+  for (int i = 0; i<NUM_LEDS; i+=1) { leds[i] = CRGB::Black; }
+  FastLED.show();
 }
 
 void handlepH() {
@@ -149,6 +223,19 @@ void handlepH() {
     if (pHObj.isQueueFull()) pHObj.popData();
     pHObj.pushData(pHDouble);
     pHObj.draw(tft, pHX, pHDouble, pHMinDouble, pHMaxDouble);
+    String ph_str = String(pHDouble);
+    char ph_char[50];
+    ph_str.toCharArray(ph_char, ph_str.length() + 1);
+    StaticJsonDocument<200> doc;
+    doc["sensorId"] = "ph";
+    doc["time"] = timeClient.getEpochTime();
+    doc["value"] = pHDouble;
+    String data = "";
+    serializeJson(doc, data);
+    char data_char[50];
+    data.toCharArray(data_char, data.length() + 1);
+    if (debug_publish) Serial.println("publish: pH: " + data);
+    client.publish("/giz/aquarium/sensor/ph", data_char);
   }
   pHObj.calibration(pHAverageVoltage, tempDouble==-127.0?25.0:tempDouble);
 }
@@ -173,6 +260,19 @@ void handleEC() {
     ECMinDouble = min(ECMinDouble==-1?ECDouble:ECMinDouble, ECDouble);
     if (ECObj.isQueueFull()) ECObj.popData();
     ECObj.pushData(ECDouble);
+    String ec_str = String(ECDouble);
+    char ec_char[50];
+    ec_str.toCharArray(ec_char, ec_str.length() + 1);
+    StaticJsonDocument<200> doc;
+    doc["sensorId"] = "ec";
+    doc["time"] = timeClient.getEpochTime();
+    doc["value"] = ECDouble;
+    String data = "";
+    serializeJson(doc, data);
+    char data_char[50];
+    data.toCharArray(data_char, data.length() + 1);
+    if (debug_publish) Serial.println("publish: EC: " + data);
+    client.publish("/giz/aquarium/sensor/ec", data_char);
     ECObj.draw(tft, ECX, ECDouble, ECMinDouble, ECMaxDouble);
   }
   ECObj.calibration(ECAverageVoltage, tempDouble==-127.0?25.0:tempDouble);
@@ -187,6 +287,19 @@ void handleDO() {
     DOMinDouble = min(DOMinDouble==-1?DODouble:DOMinDouble, DODouble);
     if (DOObj.isQueueFull()) DOObj.popData();
     DOObj.pushData(DODouble);
+    String do_str = String(DODouble);
+    char do_char[50];
+    do_str.toCharArray(do_char, do_str.length() + 1);
+    StaticJsonDocument<200> doc;
+    doc["sensorId"] = "do";
+    doc["time"] = timeClient.getEpochTime();
+    doc["value"] = DODouble;
+    String data = "";
+    serializeJson(doc, data);
+    char data_char[50];
+    data.toCharArray(data_char, data.length() + 1);
+    if (debug_publish) Serial.println("publish: DO: " + data);
+    client.publish("/giz/aquarium/sensor/do", data_char);
     DOObj.draw(tft, DOX, DODouble, DOMinDouble, DOMaxDouble);
   }
 }
@@ -203,7 +316,16 @@ void handleTemperature() {
     String celcius_str = String(celcius);
     char celcius_char[50];
     celcius_str.toCharArray(celcius_char, celcius_str.length() + 1);
-    client.publish("/giz/aquarium/sensor/temp", celcius_char);
+    StaticJsonDocument<200> doc;
+    doc["sensorId"] = "temp";
+    doc["time"] = timeClient.getEpochTime();
+    doc["value"] = tempDouble;
+    String data = "";
+    serializeJson(doc, data);
+    char data_char[50];
+    data.toCharArray(data_char, data.length() + 1);
+    if (debug_publish) Serial.println("publish: temp: " + data);
+    client.publish("/giz/aquarium/sensor/temp", data_char);
     tempMaxDouble = max(tempMaxDouble==-1?tempDouble:tempMaxDouble, tempDouble);
     tempMinDouble = min(tempMinDouble==-1?tempDouble:tempMinDouble, tempDouble);
     if (tempObj.isQueueFull()) tempObj.popData();
@@ -252,6 +374,13 @@ char *dtostrf (double val, signed char width, unsigned char prec, char *sout) {
   return sout;
 }
 
+void blinkSetupStatus() {
+  digitalWrite(PRE_SETUP_PIN, LOW);
+  delay(500);
+  digitalWrite(PRE_SETUP_PIN, HIGH);
+  delay(500);
+}
+
 void setup_wifi() {
   // Connecting to a WiFi network
   tft.setFont(Terminal6x8);
@@ -280,38 +409,130 @@ void setup_wifi() {
   tft.fillRectangle(10, 50, 100, 80, COLOR_BLACK);
 }
 
+void setup_mqtt() {
+  // client.setServer(mqtt_server, mqtt_port);
+  // client.setCallback(onMessage);
+  client.begin(mqtt_server, mqtt_port, wifiClient);
+  client.onMessage(messageReceived);
+  connect();
+}
+void connect() {  
+  while (!client.connect("", mqtt_username, mqtt_password)) {
+    Serial.print(".");
+    delay(1000);
+  }
+}
+void check_mqtt() {
+  // if (!client.connected()) {
+  //   reconnect();
+  // } else {
+  //   client.loop();
+  // }
+  client.loop();
+  if (!client.connected()) {
+    Serial.print("In reconnect MQTT...");
+    blinkSetupStatus();
+    connect();
+    Serial.print(".");
+  } else {
+    Serial.println("connected");
+    client.subscribe("/giz/#");
+    digitalWrite(PRE_SETUP_PIN, LOW);
+  }
+}
 void reconnect() {
   // Loop until we're reconnected
   Serial.println("In reconnect...");
   while (!client.connected()) {
+    blinkSetupStatus();
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect("mqttdevice")) {
+    if (client.connect(mqtt_client_id, mqtt_username, mqtt_password)) {
       Serial.println("connected");
       client.subscribe("/giz/#");
       // topic pattern: /giz/system/type/name
       // e.g. /giz/aquarium/sensor/temp
     } else {
       Serial.print("failed, rc=");
-      Serial.print(client.state());
+      // Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
       delay(5000);
     }
   }
+  digitalWrite(PRE_SETUP_PIN, LOW);
 }
 
 void onMessage(char* topic, byte* payload, unsigned int length) {
   // Serial.print("Incoming message: ");
   payload[length] = '\0';
   String topic_str = topic, payload_str = (char*)payload;
+  StaticJsonDocument<200> doc;
+  // Deserialize the JSON document
+  DeserializationError error = deserializeJson(doc, payload_str);
+  // Test if parsing succeeds.
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    return;
+  }
+  String value = doc["value"];
   // Serial.println("[" + topic_str + "]: " + payload_str);
-  if (topic_str.equals("/giz/device/spray")) {
-    if (payload_str.equals("on")) {
-      digitalWrite(LIGHT, HIGH); 
-      Serial.println("light on!");
-    } else if (payload_str.equals("off")) {
-      digitalWrite(LIGHT, LOW);
-      Serial.println("light off!");
+  if (topic_str.equals("/giz/aquarium/device/led")) {
+    // Serial.println("[" + topic_str + "]: " + value);
+    // LED_TRIGGER = true;
+    if (value.equals("on")) {
+      turnOnLight();
+      LED_STATUS = true;
+    } else {
+      turnOffLight();
+      LED_STATUS = false;
     }
+  }
+}
+
+// |
+// V
+void messageReceived(String &topic, String &payload) {
+ Serial.println("incoming: " + topic + " - " + payload);
+//  payload[length] = '\0';
+  // String topic_str = topic, payload_str = (char*)payload;
+  StaticJsonDocument<200> doc;
+  // Deserialize the JSON document
+  DeserializationError error = deserializeJson(doc, payload);
+  // Test if parsing succeeds.
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    return;
+  }
+  String value = doc["value"];
+  // Serial.println("[" + topic + "]: " + payload);
+  if (topic.equals("/giz/aquarium/device/led")) {
+    // Serial.println("[" + topic + "]: " + value);
+    // LED_TRIGGER = true;
+    if (value.equals("on")) {
+      turnOnLight();
+      LED_STATUS = true;
+    } else {
+      turnOffLight();
+      LED_STATUS = false;
+    }
+  } else if (topic.equals("/giz/aquarium/device/led/rgb")) {
+    // u_int8_t r = value["r"]; 
+    // u_int8_t g = value["g"]; 
+    // u_int8_t b = value["b"];
+    // LED_COLOR = CRGB(r, g, b);
+    StaticJsonDocument<200> rgbDoc;
+    // Deserialize the JSON document
+    DeserializationError errorRgb = deserializeJson(rgbDoc, value);
+    // Test if parsing succeeds.
+    if (errorRgb) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(errorRgb.f_str());
+      return;
+    }
+    char r[10]; char g[10]; char b[10];
+    intToStr(rgbDoc["r"], r, 0); intToStr(rgbDoc["g"], g, 0); intToStr(rgbDoc["b"], b, 0);
+    LED_COLOR = CRGB(rgbDoc["r"], rgbDoc["g"], rgbDoc["b"]);
   }
 }
